@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bridge-Link | Local Share</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Bridge-Link</h1>
+            <p class="subtitle">Secure Local Messaging & File Sharing</p>
+            <div id="connection-info" class="badge">Connecting...</div>
+        </header>
+
+        <main>
+            <section class="card message-section">
+                <h2>Messages</h2>
+                <div id="message-display" class="message-container">
+                    <!-- Messages will appear here -->
+                    <div class="empty-state">No messages yet. Send one to start!</div>
+                </div>
+                <div class="input-group">
+                    <input type="text" id="message-input" placeholder="Type a message or paste a link..." autocomplete="off">
+                    <button id="send-btn" class="primary-btn">
+                        <span>Send</span>
+                    </button>
+                </div>
+            </section>
+
+            <section class="card file-section">
+                <h2>Files</h2>
+                <div class="upload-zone" id="drop-zone">
+                    <input type="file" id="file-input" hidden>
+                    <div class="upload-prompt">
+                        <div class="icon">📁</div>
+                        <p>Drag & drop files or <span>browse</span></p>
+                    </div>
+                </div>
+                <div id="file-list" class="file-container">
+                    <!-- Files will appear here -->
+                    <div class="empty-state">No files shared yet.</div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>&copy; 2026 Bridge-Link Local Sharing</p>
+        </footer>
+    </div>
+
+    <div id="notification" class="notification hidden"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
