@@ -19,6 +19,28 @@ if (!fs.existsSync(uploadsDir)) {
 app.use(cors());
 app.use(express.json());
 
+// ---------------------------------------------------------
+// CRITICAL: Health check must be BEFORE any auth middleware
+// ---------------------------------------------------------
+app.get('/', (req, res, next) => {
+    // Some platforms ping / instead of /health
+    if (req.headers['user-agent'] && (req.headers['user-agent'].includes('HealthCheck') || req.headers['user-agent'].includes('kube-probe'))) {
+        return res.status(200).send('OK');
+    }
+    
+    // Explicitly serve index.html or fallback to 200 OK
+    const indexPath = path.join(__dirname, 'public', 'index.html');
+    if (fs.existsSync(indexPath)) {
+        return res.sendFile(indexPath);
+    } else {
+        return res.status(200).send('Bridge-Link Server Running');
+    }
+});
+
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // Auth Middleware
 const auth = (req, res, next) => {
     const password = req.headers['x-password'];
@@ -134,9 +156,7 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server started on port ${PORT}`);
     const localIp = getLocalIp();
-    console.log(`Server running at:`);
-    console.log(`- Local:   http://localhost:${PORT}`);
-    console.log(`- Network: http://${localIp}:${PORT}`);
-    console.log('\nShare this Network URL with your phone to connect!');
+    console.log(`[Network URL] http://${localIp}:${PORT}`);
 });
