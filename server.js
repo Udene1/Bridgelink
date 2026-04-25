@@ -22,6 +22,23 @@ app.use(express.json());
 // ---------------------------------------------------------
 // CRITICAL: Health check must be BEFORE any auth middleware
 // ---------------------------------------------------------
+// Common container ping paths
+const healthPaths = ['/health', '/ping', '/live', '/ready'];
+
+app.use((req, res, next) => {
+    // Intercept health checks at middleware level to guarantee response
+    if (healthPaths.includes(req.path)) {
+        return res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+    }
+    
+    // Some platforms ping / with a HealthCheck User-Agent
+    if (req.path === '/' && req.headers['user-agent'] && (req.headers['user-agent'].includes('HealthCheck') || req.headers['user-agent'].includes('kube-probe'))) {
+        return res.status(200).send('OK');
+    }
+    
+    next();
+});
+
 app.get('/', (req, res, next) => {
     // Some platforms ping / instead of /health
     if (req.headers['user-agent'] && (req.headers['user-agent'].includes('HealthCheck') || req.headers['user-agent'].includes('kube-probe'))) {
@@ -35,10 +52,6 @@ app.get('/', (req, res, next) => {
     } else {
         return res.status(200).send('Bridge-Link Server Running');
     }
-});
-
-app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Auth Middleware
@@ -155,8 +168,12 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, () => {
     console.log(`Server started on port ${PORT}`);
-    const localIp = getLocalIp();
-    console.log(`[Network URL] http://${localIp}:${PORT}`);
+    try {
+        const localIp = getLocalIp();
+        console.log(`[Network URL] http://${localIp}:${PORT}`);
+    } catch (e) {
+        console.log(`[Network URL binding error]`);
+    }
 });
