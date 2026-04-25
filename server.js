@@ -9,6 +9,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-me';
 
+// Ensure uploads directory exists at startup
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -23,7 +29,12 @@ const auth = (req, res, next) => {
     }
 };
 
-app.use(express.static('public')); // Serve frontend files from 'public' folder (publicly)
+app.use(express.static(path.join(__dirname, 'public'))); // Serve frontend files from 'public' folder (publicly)
+
+// Health check endpoint for deployment platforms
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 // Storage for messages (in-memory for simplicity, could use a file)
 let messages = [];
@@ -115,6 +126,12 @@ function getLocalIp() {
     }
     return '127.0.0.1';
 }
+
+// Global error handler to prevent crashes
+app.use((err, req, res, next) => {
+    console.error('Server error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+});
 
 app.listen(PORT, '0.0.0.0', () => {
     const localIp = getLocalIp();
