@@ -6,13 +6,28 @@ const cors = require('cors');
 const os = require('os');
 
 const app = express();
+// --- CONFIGURATION ---
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-me';
 
-// Ensure uploads directory exists at startup
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
+// Set up uploads directory (robust for serverless/read-only FS)
+let uploadsDir = path.join(__dirname, 'uploads');
+try {
+    if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+        console.log(`[Init] Created uploads directory: ${uploadsDir}`);
+    }
+} catch (err) {
+    console.warn(`[Init] Warning: Could not create local uploads directory, falling back to /tmp/uploads: ${err.message}`);
+    uploadsDir = path.join('/tmp', 'bridge-link-uploads');
+    if (!fs.existsSync(uploadsDir)) {
+        try {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+            console.log(`[Init] Created fallback uploads directory: ${uploadsDir}`);
+        } catch (tmpErr) {
+            console.error(`[Init] Critical Error: Could not create fallback uploads directory: ${tmpErr.message}`);
+        }
+    }
 }
 
 // Middleware
@@ -27,24 +42,26 @@ const healthPaths = ['/health', '/ping', '/live', '/ready'];
 
 app.use((req, res, next) => {
     // Intercept health checks at middleware level to guarantee response
-    if (healthPaths.includes(req.path)) {
-        return res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
-    }
-    
-    // Some platforms ping / with a HealthCheck User-Agent
-    if (req.path === '/' && req.headers['user-agent'] && (req.headers['user-agent'].includes('HealthCheck') || req.headers['user-agent'].includes('kube-probe'))) {
-        return res.status(200).send('OK');
+    // Logic: pxxl/vercel often ping / or /health
+    const isHealthCheck = healthPaths.includes(req.path) || 
+                         (req.headers['user-agent'] && (
+                             req.headers['user-agent'].includes('HealthCheck') || 
+                             req.headers['user-agent'].includes('kube-probe') ||
+                             req.headers['user-agent'].includes('Vercel')
+                         ));
+
+    if (isHealthCheck) {
+        return res.status(200).json({ 
+            status: 'ok', 
+            service: 'bridge-link',
+            timestamp: new Date().toISOString() 
+        });
     }
     
     next();
 });
 
-app.get('/', (req, res, next) => {
-    // Some platforms ping / instead of /health
-    if (req.headers['user-agent'] && (req.headers['user-agent'].includes('HealthCheck') || req.headers['user-agent'].includes('kube-probe'))) {
-        return res.status(200).send('OK');
-    }
-    
+app.get('/', (req, res) => {
     // Explicitly serve index.html or fallback to 200 OK
     const indexPath = path.join(__dirname, 'public', 'index.html');
     if (fs.existsSync(indexPath)) {
@@ -77,11 +94,13 @@ let messages = [];
 // Multer configuration for file uploads
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const uploadPath = path.join(__dirname, 'uploads');
-        if (!fs.existsSync(uploadPath)) {
-            fs.mkdirSync(uploadPath);
+        // Use the globally resolved uploadsDir
+        if (!fs.existsSync(uploadsDir)) {
+            try {
+                fs.mkdirSync(uploadsDir, { recursive: true });
+            } catch (e) {}
         }
-        cb(null, uploadPath);
+        cb(null, uploadsDir);
     },
     filename: (req, file, cb) => {
         cb(null, Date.now() + '-' + file.originalname);
@@ -126,8 +145,7 @@ app.post('/api/upload', auth, upload.single('file'), (req, res) => {
 });
 
 app.get('/api/files', auth, (req, res) => {
-    const uploadPath = path.join(__dirname, 'uploads');
-    fs.readdir(uploadPath, (err, files) => {
+    fs.readdir(uploadsDir, (err, files) => {
         if (err) {
             return res.status(500).json({ error: 'Unable to list files' });
         }
@@ -142,7 +160,7 @@ app.get('/api/files', auth, (req, res) => {
 
 app.get('/api/download/:filename', auth, (req, res) => {
     const filename = req.params.filename;
-    const filePath = path.join(__dirname, 'uploads', filename);
+    const filePath = path.join(uploadsDir, filename);
     if (!fs.existsSync(filePath)) {
         return res.status(404).json({ error: 'File not found' });
     }
@@ -169,11 +187,17 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Server started on port ${PORT}`);
+    console.log(`[Server] Started successfully on port ${PORT}`);
     try {
-        const localIp = getLocalIp();
-        console.log(`[Network URL] http://${localIp}:${PORT}`);
+        // Only log network URL if not in a Vercel/PXXL environment
+        if (!process.env.VERCEL && !process.env.PXXL_DEPLOY) {
+            const localIp = getLocalIp();
+            console.log(`[Network URL] http://${localIp}:${PORT}`);
+        }
     } catch (e) {
-        console.log(`[Network URL binding error]`);
+        // Silently skip if network discovery fails
     }
 });
+
+// Export app for serverless platforms
+module.exports = app;
