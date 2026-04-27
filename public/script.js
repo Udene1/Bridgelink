@@ -10,32 +10,73 @@ const notification = document.getElementById('notification');
 
 let lastMessageCount = 0;
 let lastFileCount = 0;
-let adminPassword = localStorage.getItem('bridge_password') || '';
+let currentRoomId = localStorage.getItem('bridge_room') || '';
+let currentPassword = localStorage.getItem('bridge_password') || '';
+
+const loginOverlay = document.getElementById('login-overlay');
+const appContainer = document.getElementById('app-container');
+const loginForm = document.getElementById('login-form');
+const roomInput = document.getElementById('room-input');
+const passwordInput = document.getElementById('password-input');
+const currentRoomDisplay = document.getElementById('current-room-display');
+const logoutBtn = document.getElementById('logout-btn');
 
 // Initialize
 async function init() {
-    checkAuth();
+    if (currentRoomId && currentPassword) {
+        showApp();
+    } else {
+        showLogin();
+    }
+}
+
+function showLogin() {
+    loginOverlay.style.display = 'flex';
+    appContainer.style.display = 'none';
+}
+
+function showApp() {
+    loginOverlay.style.display = 'none';
+    appContainer.style.display = 'block';
+    currentRoomDisplay.textContent = currentRoomId;
     updateConnectionInfo();
     fetchMessages();
     fetchFiles();
     
-    // Poll for new data every 3 seconds
-    setInterval(() => {
-        if (adminPassword) {
-            fetchMessages();
-            fetchFiles();
-        }
-    }, 3000);
-}
-
-function checkAuth() {
-    if (!adminPassword) {
-        adminPassword = prompt('Please enter the Bridge-Link password:');
-        if (adminPassword) {
-            localStorage.setItem('bridge_password', adminPassword);
-        }
+    // Poll for new data
+    if (!window.pollInterval) {
+        window.pollInterval = setInterval(() => {
+            if (currentRoomId && currentPassword) {
+                fetchMessages();
+                fetchFiles();
+            }
+        }, 3000);
     }
 }
+
+loginForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    currentRoomId = roomInput.value.trim();
+    currentPassword = passwordInput.value;
+    
+    if (currentRoomId && currentPassword) {
+        localStorage.setItem('bridge_room', currentRoomId);
+        localStorage.setItem('bridge_password', currentPassword);
+        showApp();
+    }
+});
+
+logoutBtn.addEventListener('click', () => {
+    currentRoomId = '';
+    currentPassword = '';
+    localStorage.removeItem('bridge_room');
+    localStorage.removeItem('bridge_password');
+    if (window.pollInterval) {
+        clearInterval(window.pollInterval);
+        window.pollInterval = null;
+    }
+    showLogin();
+});
 
 // Update connection status
 function updateConnectionInfo() {
@@ -48,13 +89,19 @@ function updateConnectionInfo() {
 async function fetchMessages() {
     try {
         const response = await fetch('/api/messages', {
-            headers: { 'x-password': adminPassword }
+            headers: { 
+                'x-room-id': currentRoomId,
+                'x-password': currentPassword 
+            }
         });
         
         if (response.status === 401) {
-            adminPassword = '';
+            currentRoomId = '';
+            currentPassword = '';
+            localStorage.removeItem('bridge_room');
             localStorage.removeItem('bridge_password');
-            checkAuth();
+            showLogin();
+            showNotification('Session expired or invalid password. Please login again.');
             return;
         }
         
@@ -107,7 +154,8 @@ async function sendMessage() {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'x-password': adminPassword
+                'x-room-id': currentRoomId,
+                'x-password': currentPassword
             },
             body: JSON.stringify({ message: text, sender: 'Device' })
         });
@@ -118,9 +166,11 @@ async function sendMessage() {
             showNotification('Message sent!');
         } else if (response.status === 401) {
             showNotification('Error: Invalid password. Please re-enter.');
-            adminPassword = '';
+            currentRoomId = '';
+            currentPassword = '';
+            localStorage.removeItem('bridge_room');
             localStorage.removeItem('bridge_password');
-            checkAuth();
+            showLogin();
         } else {
             const err = await response.json();
             showNotification(`Error: ${err.error || 'Failed to send'}`);
@@ -138,7 +188,10 @@ async function sendMessage() {
 async function fetchFiles() {
     try {
         const response = await fetch('/api/files', {
-            headers: { 'x-password': adminPassword }
+            headers: { 
+                'x-room-id': currentRoomId,
+                'x-password': currentPassword 
+            }
         });
         
         if (response.status === 401) return; // Handled by messages fetch
@@ -175,7 +228,10 @@ function renderFiles(files) {
 
 async function downloadFile(filename) {
     const response = await fetch(`/api/download/${filename}`, {
-        headers: { 'x-password': adminPassword }
+        headers: { 
+            'x-room-id': currentRoomId,
+            'x-password': currentPassword 
+        }
     });
     if (response.ok) {
         const blob = await response.blob();
@@ -199,7 +255,10 @@ async function uploadFile(file) {
     try {
         const response = await fetch('/api/upload', {
             method: 'POST',
-            headers: { 'x-password': adminPassword },
+            headers: { 
+                'x-room-id': currentRoomId,
+                'x-password': currentPassword 
+            },
             body: formData
         });
 

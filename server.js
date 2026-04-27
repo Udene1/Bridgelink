@@ -8,7 +8,6 @@ const os = require('os');
 const app = express();
 // --- CONFIGURATION ---
 const PORT = process.env.PORT || 3000;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-me';
 
 // Set up uploads directory (robust for serverless/read-only FS)
 let uploadsDir = path.join(__dirname, 'uploads');
@@ -69,14 +68,34 @@ app.get('/', (req, res) => {
     }
 });
 
-// Auth Middleware
+// Storage for rooms (in-memory: { [roomId]: { password, messages: [] } })
+const rooms = {};
+
+// Auth Middleware (Room-based)
 const auth = (req, res, next) => {
+    const roomId = req.headers['x-room-id'];
     const password = req.headers['x-password'];
-    if (password === ADMIN_PASSWORD) {
-        next();
-    } else {
-        res.status(401).json({ error: 'Unauthorized' });
+
+    if (!roomId) {
+        return res.status(401).json({ error: 'Room ID required' });
     }
+    if (!password) {
+        return res.status(401).json({ error: 'Password required' });
+    }
+
+    // Sanitize roomId to prevent path traversal
+    if (roomId.includes('..') || roomId.includes('/') || roomId.includes('\\')) {
+        return res.status(400).json({ error: 'Invalid Room ID' });
+    }
+
+    if (!rooms[roomId]) {
+        rooms[roomId] = { password, messages: [] };
+    } else if (rooms[roomId].password !== password) {
+        return res.status(401).json({ error: 'Incorrect password for this room' });
+    }
+
+    req.roomId = roomId;
+    next();
 };
 
 app.use(express.static(path.join(__dirname, 'public'))); // Serve frontend files from 'public' folder (publicly)
@@ -86,19 +105,16 @@ app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Storage for messages (in-memory for simplicity, could use a file)
-let messages = [];
-
 // Multer configuration for file uploads
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        // Use the globally resolved uploadsDir
-        if (!fs.existsSync(uploadsDir)) {
+        const roomUploadsDir = path.join(uploadsDir, req.roomId || 'default');
+        if (!fs.existsSync(roomUploadsDir)) {
             try {
-                fs.mkdirSync(uploadsDir, { recursive: true });
+                fs.mkdirSync(roomUploadsDir, { recursive: true });
             } catch (e) {}
         }
-        cb(null, uploadsDir);
+        cb(null, roomUploadsDir);
     },
     filename: (req, file, cb) => {
         cb(null, Date.now() + '-' + file.originalname);
@@ -121,12 +137,12 @@ app.post('/api/messages', auth, (req, res) => {
         sender: sender || 'Anonymous',
         timestamp: new Date().toISOString()
     };
-    messages.push(newMessage);
+    rooms[req.roomId].messages.push(newMessage);
     res.status(201).json(newMessage);
 });
 
 app.get('/api/messages', auth, (req, res) => {
-    res.json(messages);
+    res.json(rooms[req.roomId].messages);
 });
 
 // File endpoints
@@ -143,7 +159,12 @@ app.post('/api/upload', auth, upload.single('file'), (req, res) => {
 });
 
 app.get('/api/files', auth, (req, res) => {
-    fs.readdir(uploadsDir, (err, files) => {
+    const roomUploadsDir = path.join(uploadsDir, req.roomId);
+    if (!fs.existsSync(roomUploadsDir)) {
+        return res.json([]);
+    }
+    
+    fs.readdir(roomUploadsDir, (err, files) => {
         if (err) {
             return res.status(500).json({ error: 'Unable to list files' });
         }
@@ -158,12 +179,17 @@ app.get('/api/files', auth, (req, res) => {
 
 app.get('/api/download/:filename', auth, (req, res) => {
     const filename = req.params.filename;
-    const filePath = path.join(uploadsDir, filename);
+    // ensure no directory traversal in filename
+    if (filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
+        return res.status(400).json({ error: 'Invalid filename' });
+    }
+    const filePath = path.join(uploadsDir, req.roomId, filename);
     if (!fs.existsSync(filePath)) {
         return res.status(404).json({ error: 'File not found' });
     }
     res.download(filePath);
 });
+
 
 // Helper to get local IP address
 function getLocalIp() {

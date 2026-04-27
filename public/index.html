@@ -8,11 +8,27 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
+    <div id="login-overlay" class="login-overlay">
+        <div class="login-card card">
+            <h2>Join a Room</h2>
+            <p class="subtitle">Create a new secure space or join an existing one.</p>
+            <form id="login-form">
+                <input type="text" id="room-input" placeholder="Room Name (e.g. MySecretRoom)" required autocomplete="off">
+                <input type="password" id="password-input" placeholder="Room Password" required>
+                <button type="submit" class="primary-btn">Enter Room</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="container" id="app-container" style="display: none;">
         <header>
             <h1>Bridge-Link</h1>
             <p class="subtitle">Secure Local Messaging & File Sharing</p>
-            <div id="connection-info" class="badge">Connecting...</div>
+            <div class="header-badges">
+                <div id="room-badge" class="badge">Room: <span id="current-room-display"></span></div>
+                <div id="connection-info" class="badge">Connecting...</div>
+                <button id="logout-btn" class="badge logout-btn" title="Leave Room">Leave</button>
+            </div>
         </header>
 
         <main>
