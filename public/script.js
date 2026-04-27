@@ -98,6 +98,10 @@ async function sendMessage() {
     const text = messageInput.value.trim();
     if (!text) return;
 
+    // Visual feedback
+    sendBtn.disabled = true;
+    sendBtn.classList.add('loading');
+
     try {
         const response = await fetch('/api/messages', {
             method: 'POST',
@@ -112,10 +116,21 @@ async function sendMessage() {
             messageInput.value = '';
             fetchMessages();
             showNotification('Message sent!');
+        } else if (response.status === 401) {
+            showNotification('Error: Invalid password. Please re-enter.');
+            adminPassword = '';
+            localStorage.removeItem('bridge_password');
+            checkAuth();
+        } else {
+            const err = await response.json();
+            showNotification(`Error: ${err.error || 'Failed to send'}`);
         }
     } catch (error) {
         console.error('Error sending message:', error);
-        showNotification('Failed to send message');
+        showNotification('Network error. Check connection.');
+    } finally {
+        sendBtn.disabled = false;
+        sendBtn.classList.remove('loading');
     }
 }
 

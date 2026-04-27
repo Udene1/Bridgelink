@@ -34,11 +34,9 @@ try {
 app.use(cors());
 app.use(express.json());
 
-// ---------------------------------------------------------
-// CRITICAL: Health check must be BEFORE any auth middleware
-// ---------------------------------------------------------
 // Common container ping paths
 const healthPaths = ['/health', '/ping', '/live', '/ready'];
+
 
 app.use((req, res, next) => {
     // Intercept health checks at middleware level to guarantee response
