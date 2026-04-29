@@ -71,8 +71,42 @@ app.get('/', (req, res) => {
 // Storage for rooms (in-memory: { [roomId]: { password, messages: [] } })
 const rooms = {};
 
+// Helper: Save room data to disk
+function saveRoom(roomId) {
+    const roomPath = path.join(uploadsDir, roomId, 'config.json');
+    const msgPath = path.join(uploadsDir, roomId, 'messages.json');
+    try {
+        if (!fs.existsSync(path.join(uploadsDir, roomId))) {
+            fs.mkdirSync(path.join(uploadsDir, roomId), { recursive: true });
+        }
+        fs.writeFileSync(roomPath, JSON.stringify({ password: rooms[roomId].password }));
+        fs.writeFileSync(msgPath, JSON.stringify(rooms[roomId].messages));
+    } catch (e) {
+        console.error(`[Storage] Error saving room ${roomId}:`, e.message);
+    }
+}
+
+// Helper: Load room data from disk
+function loadRoom(roomId) {
+    const roomPath = path.join(uploadsDir, roomId, 'config.json');
+    const msgPath = path.join(uploadsDir, roomId, 'messages.json');
+    if (fs.existsSync(roomPath) && fs.existsSync(msgPath)) {
+        try {
+            const config = JSON.parse(fs.readFileSync(roomPath, 'utf8'));
+            const messages = JSON.parse(fs.readFileSync(msgPath, 'utf8'));
+            return { password: config.password, messages: messages };
+        } catch (e) {
+            console.error(`[Storage] Error loading room ${roomId}:`, e.message);
+        }
+    }
+    return null;
+}
+
 // Auth Middleware (Room-based)
 const auth = (req, res, next) => {
+    // Prevent caching on all authenticated routes
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+
     const roomId = req.headers['x-room-id'];
     const password = req.headers['x-password'];
 
@@ -88,9 +122,19 @@ const auth = (req, res, next) => {
         return res.status(400).json({ error: 'Invalid Room ID' });
     }
 
+    // Initialize from memory or disk
     if (!rooms[roomId]) {
-        rooms[roomId] = { password, messages: [] };
-    } else if (rooms[roomId].password !== password) {
+        const saved = loadRoom(roomId);
+        if (saved) {
+            rooms[roomId] = saved;
+        } else {
+            // New room
+            rooms[roomId] = { password, messages: [] };
+            saveRoom(roomId);
+        }
+    }
+
+    if (rooms[roomId].password !== password) {
         return res.status(401).json({ error: 'Incorrect password for this room' });
     }
 
@@ -138,6 +182,7 @@ app.post('/api/messages', auth, (req, res) => {
         timestamp: new Date().toISOString()
     };
     rooms[req.roomId].messages.push(newMessage);
+    saveRoom(req.roomId);
     res.status(201).json(newMessage);
 });
 

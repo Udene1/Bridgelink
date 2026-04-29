@@ -12,6 +12,8 @@ let lastMessageCount = 0;
 let lastFileCount = 0;
 let currentRoomId = localStorage.getItem('bridge_room') || '';
 let currentPassword = localStorage.getItem('bridge_password') || '';
+let isFetchingMessages = false;
+let isFetchingFiles = false;
 
 const loginOverlay = document.getElementById('login-overlay');
 const appContainer = document.getElementById('app-container');
@@ -87,8 +89,11 @@ function updateConnectionInfo() {
 
 // Fetch messages from backend
 async function fetchMessages() {
+    if (isFetchingMessages) return;
+    isFetchingMessages = true;
+
     try {
-        const response = await fetch('/api/messages', {
+        const response = await fetch(`/api/messages?t=${Date.now()}`, {
             headers: { 
                 'x-room-id': currentRoomId,
                 'x-password': currentPassword 
@@ -107,12 +112,15 @@ async function fetchMessages() {
         
         const messages = await response.json();
         
-        if (messages.length !== lastMessageCount) {
+        // Prevent flicker: only render if count changed OR if we went from 0 to something
+        if (messages.length !== lastMessageCount || (messages.length > 0 && messageDisplay.querySelector('.empty-state'))) {
             renderMessages(messages);
             lastMessageCount = messages.length;
         }
     } catch (error) {
         console.error('Error fetching messages:', error);
+    } finally {
+        isFetchingMessages = false;
     }
 }
 
@@ -186,8 +194,11 @@ async function sendMessage() {
 
 // Fetch files from backend
 async function fetchFiles() {
+    if (isFetchingFiles) return;
+    isFetchingFiles = true;
+
     try {
-        const response = await fetch('/api/files', {
+        const response = await fetch(`/api/files?t=${Date.now()}`, {
             headers: { 
                 'x-room-id': currentRoomId,
                 'x-password': currentPassword 
@@ -198,12 +209,14 @@ async function fetchFiles() {
         
         const files = await response.json();
         
-        if (files.length !== lastFileCount) {
+        if (files.length !== lastFileCount || (files.length > 0 && fileList.querySelector('.empty-state'))) {
             renderFiles(files);
             lastFileCount = files.length;
         }
     } catch (error) {
         console.error('Error fetching files:', error);
+    } finally {
+        isFetchingFiles = false;
     }
 }
 
