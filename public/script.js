@@ -12,8 +12,15 @@ let lastMessageCount = 0;
 let lastFileCount = 0;
 let currentRoomId = localStorage.getItem('bridge_room') || '';
 let currentPassword = localStorage.getItem('bridge_password') || '';
+let currentDeviceId = localStorage.getItem('bridge_device_id') || '';
 let isFetchingMessages = false;
 let isFetchingFiles = false;
+
+// Generate unique device ID if not present
+if (!currentDeviceId) {
+    currentDeviceId = 'dev' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+    localStorage.setItem('bridge_device_id', currentDeviceId);
+}
 
 const loginOverlay = document.getElementById('login-overlay');
 const appContainer = document.getElementById('app-container');
@@ -131,12 +138,20 @@ function renderMessages(messages) {
         return;
     }
 
-    messageDisplay.innerHTML = messages.map(msg => `
-        <div class="message-item">
-            <div class="sender">${msg.sender} • ${new Date(msg.timestamp).toLocaleTimeString()}</div>
-            <div class="text">${formatText(msg.text)}</div>
-        </div>
-    `).join('');
+    messageDisplay.innerHTML = messages.map(msg => {
+        const isSelf = msg.deviceId === currentDeviceId;
+        const alignClass = isSelf ? 'self' : 'other';
+        const time = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        return `
+            <div class="message-wrapper ${alignClass}">
+                <div class="message-bubble">
+                    <div class="message-text">${formatText(msg.text)}</div>
+                    <div class="message-meta">${time}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
     
     // Scroll to bottom
     messageDisplay.scrollTop = messageDisplay.scrollHeight;
@@ -165,7 +180,11 @@ async function sendMessage() {
                 'x-room-id': currentRoomId,
                 'x-password': currentPassword
             },
-            body: JSON.stringify({ message: text, sender: 'Device' })
+            body: JSON.stringify({ 
+                message: text, 
+                sender: 'User',
+                deviceId: currentDeviceId 
+            })
         });
 
         if (response.ok) {

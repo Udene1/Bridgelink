@@ -171,7 +171,7 @@ const upload = multer({ storage: storage });
 
 // Message endpoints
 app.post('/api/messages', auth, (req, res) => {
-    const { message, sender } = req.body;
+    const { message, sender, deviceId } = req.body;
     if (!message) {
         return res.status(400).json({ error: 'Message is required' });
     }
@@ -179,6 +179,7 @@ app.post('/api/messages', auth, (req, res) => {
         id: Date.now(),
         text: message,
         sender: sender || 'Anonymous',
+        deviceId: deviceId || 'unknown',
         timestamp: new Date().toISOString()
     };
     rooms[req.roomId].messages.push(newMessage);
